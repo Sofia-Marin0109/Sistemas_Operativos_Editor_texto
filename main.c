@@ -120,7 +120,6 @@ void print_help(const char *arg) {
 
         printf("\nUso general:\n");
         printf("  " COLOR_PROMPT "help <categoria>" COLOR_RESET "  - Muestra comandos específicos de una categoría.\n");
-        printf("  " COLOR_PROMPT "help <comando>" COLOR_RESET "    - Explica el uso y las syscalls de un comando específico.\n");
         printf("  " COLOR_PROMPT "clear" COLOR_RESET "             - Limpia la pantalla.\n");
         printf("  " COLOR_PROMPT "exit" COLOR_RESET "              - Cierra el shell.\n\n");
         return;
