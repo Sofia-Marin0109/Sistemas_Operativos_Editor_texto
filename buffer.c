@@ -89,7 +89,7 @@ static char *duplicar(const char *src, size_t len) {
  * ==================================================================================== */
 
 void buf_init(Buffer *b) {
-    b->filename[0]   = '\0';
+    memset(b->filename, 0, sizeof(b->filename));
     b->lineas        = NULL;
     b->num           = 0;
     b->cap           = 0;
@@ -101,22 +101,38 @@ void buf_init(Buffer *b) {
 void buf_liberar(Buffer *b) {
     /* Cada línea tiene su propio bloque en el heap: hay que liberarlos uno a uno
        ANTES de liberar el arreglo de descriptores, o se pierden las direcciones. */
-    for (size_t i = 0; i < b->num; i++) {
-        free(b->lineas[i].texto);
+    if (b->lineas != NULL) {
+        for (size_t i = 0; i < b->num; i++) {
+            if (b->lineas[i].texto != NULL) {
+                free(b->lineas[i].texto);
+            }
+        }
+        free(b->lineas);
     }
-    free(b->lineas);
     buf_init(b);
 }
 
 int buf_cargar(Buffer *b, const char *ruta) {
     /* Si ya había un documento cargado, se descarta su memoria primero. */
-    if (b->cargado) buf_liberar(b);
+   
+    if (ruta == NULL || ruta[0] == '\0') {
+        return -1;
+    }
+    char ruta_segura[sizeof(b->filename)];
+    memset(ruta_segura, 0, sizeof(ruta_segura));
+    strncpy(ruta_segura, ruta, sizeof(ruta_segura) - 1);
+
+    if (b->cargado) {
+        buf_liberar(b);
+    } else {
+        buf_init(b);
+    }
 
     /* --- 1. Abrir -------------------------------------------------------- */
     /* O_RDWR|O_CREAT y deliberadamente SIN O_TRUNC: truncar borraría el
        contenido justo al abrirlo. El 0644 solo aplica si el archivo se crea. */
-    LOG_SYSCALL("open", "\"%s\", O_RDWR|O_CREAT, 0644", ruta);
-    int fd = open(ruta, O_RDWR | O_CREAT, 0644);
+    LOG_SYSCALL("open", "\"%s\", O_RDWR|O_CREAT, 0644", ruta_segura);
+    int fd = open(ruta_segura, O_RDWR | O_CREAT, 0644);
     if (fd == -1) {
         LOG_SYSCALL_ERROR(strerror(errno));
         perror("open");
@@ -173,12 +189,13 @@ int buf_cargar(Buffer *b, const char *ruta) {
     /* El descriptor no se conserva entre comandos: el documento ya vive en RAM.
        Un fd abierto sin uso es un recurso retenido y una fuente de estado
        desincronizado (posición del cursor, cambios externos al archivo). */
+    
     LOG_SYSCALL("close", "%d", fd);
     int cres = close(fd);
     LOG_SYSCALL_RESULT(cres);
 
     /* --- 5. Trocear en descriptores de línea ------------------------------ */
-    buf_init(b);
+
     size_t inicio = 0;
     for (ssize_t i = 0; i < leidos; i++) {
         if (crudo[i] == '\n') {
@@ -208,9 +225,9 @@ int buf_cargar(Buffer *b, const char *ruta) {
         b->newline_final = 1;
     }
 
-    free(crudo);   /* el texto ya fue copiado a bloques por línea */
+    if (crudo) free(crudo);  /* el texto ya fue copiado a bloques por línea */
 
-    strncpy(b->filename, ruta, sizeof(b->filename) - 1);
+    strncpy(b->filename, ruta_segura, sizeof(b->filename) - 1);
     b->filename[sizeof(b->filename) - 1] = '\0';
     b->cargado = 1;
     b->dirty   = 0;
@@ -319,7 +336,7 @@ int buf_guardar(Buffer *b, ModoGuardado modo) {
          * proceso muera" de "a prueba de corte de energía": sin él, el rename
          * puede consolidarse antes de que los datos salgan del page cache.
          * ------------------------------------------------------------------ */
-        char tmp[sizeof(b->filename) + 8];
+        char tmp[sizeof(b->filename) + 16];
         snprintf(tmp, sizeof(tmp), "%s.tmp", b->filename);
 
         LOG_SYSCALL("open", "\"%s\", O_WRONLY|O_CREAT|O_TRUNC, 0644", tmp);
